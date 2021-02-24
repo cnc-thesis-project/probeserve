@@ -31,24 +31,22 @@ if __name__ == "__main__":
 
     mwdb = mwdblib.MWDB(api_url=args.mwdb_url, api_key=secret)
 
-    while (True):
-        recent_configs = mwdb.recent_configs()
-        for idx, config in enumerate(recent_configs):
-            cncs = []
-            # TODO: Perform additional processing to capture
-            # objects that do not conform to the below structure.
-            if config.cfg.get("cncs"):
-                for cnc in config.cfg.get("cncs"):
-                    if type(cnc["host"]) is str and type(cnc["port"]) is int:
-                        for ip in resolve(cnc["host"]):
-                            cncs.append(ip + ":" + str(cnc["port"]))
-            if config.cfg.get("c2"):
-                for cnc in config.cfg.get("c2"):
-                    if type(cnc) is str:
-                        cnc_parts = cnc.split(":")
-                        for ip in resolve(cnc_parts[0]):
-                            cncs.append(ip + ":" + cnc_parts[1])
+    for config in mwdb.listen_for_configs():
+        cncs = []
+        # TODO: Perform additional processing to capture
+        # objects that do not conform to the below structure.
+        if config.cfg.get("cncs"):
+            for cnc in config.cfg.get("cncs"):
+                if type(cnc["host"]) is str and type(cnc["port"]) is int:
+                    for ip in resolve(cnc["host"]):
+                        cncs.append(ip + ":" + str(cnc["port"]))
+        if config.cfg.get("c2"):
+            for cnc in config.cfg.get("c2"):
+                if type(cnc) is str:
+                    cnc_parts = cnc.split(":")
+                    for ip in resolve(cnc_parts[0]):
+                        cncs.append(ip + ":" + cnc_parts[1])
 
-            for cnc in cncs:
-                print("Have CnC:", cnc)
-        time.sleep(3600)
+        for cnc in cncs:
+            print("Have CnC:", cnc)
+    time.sleep(3600)
