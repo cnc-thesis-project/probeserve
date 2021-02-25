@@ -8,7 +8,7 @@ import re
 import dns.resolver
 
 DEFAULT_MWDB_URL = "https://spawnwalk.duckdns.org"
-DEFAULT_SCAN_INTERVAL_SECONDS = 10*60
+DEFAULT_SCAN_INTERVAL_SECONDS = 30*60
 masscan_path = None
 
 # TODO: Perform additional processing to capture
@@ -25,28 +25,36 @@ def get_c2s(config):
     if config.cfg.get("c2"):
         for cnc in config.cfg.get("c2"):
             if type(cnc) is str:
+                url_regex = "^[a-z]+://.*"
+                if re.match(url_regex, cnc):
+                    print("Ignoring URL: {}".format(cnc))
+                    continue
+                print("Received C2:", cnc)
                 cnc_parts = cnc.split(":")
                 for ip in resolve(cnc_parts[0]):
-                    print("Received C2:", ip + ":" + cnc_parts[1])
-                    cncs.append({"ip": ip, "port": cnc_parts[1]})
+                    cnc = {"ip": ip}
+                    if len(cnc_parts) > 1:
+                        cnc["port"] = cnc_parts[1]
+                    cncs.append(cnc)
     return cncs
 
 
-def init_scan(hosts):
+def run_scan(hosts):
     print("Running scan")
 
     ips = set()
     ports = set()
     for host in hosts:
         ips.add(host["ip"])
-        ports.add(host["port"])
+        if host.get("port"):
+            ports.add(host["port"])
 
     ips_csv = ",".join(ips)
     ports_csv = ",".join([ str(x) for x in ports])
     masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "-p", ports_csv, ips_csv]
     print("Running command '{}'".format(" ".join(masscan_cmd)))
-    subprocess.Popen(masscan_cmd)
-    print("Masscan started")
+    p = subprocess.Popen(masscan_cmd)
+    p.wait()
 
 
 def resolve(address):
@@ -70,12 +78,13 @@ if __name__ == "__main__":
     parser.add_argument("--mwdb-url", help="The URL to the MWDB instance.", default=DEFAULT_MWDB_URL + "/api")
     parser.add_argument("--secret", help="The secret key.", required=True)
     parser.add_argument("--masscan", help="The path to the masscan binary.", default="masscan")
-    parser.add_argument("--cutoff", help="Cutoff time in hours for time based retrieval.", default=24)
+    parser.add_argument("--cutoff", help="Cutoff time in hours for time based retrieval.", default=24, type=int)
     parser.add_argument("--scan-interval", help="Scan interval.", default=DEFAULT_SCAN_INTERVAL_SECONDS)
     args = parser.parse_args()
     secret = args.secret
     masscan_path = args.masscan
     cutoff_hours = args.cutoff
+    scan_interval = args.scan_interval
 
     mwdb = mwdblib.MWDB(api_url=args.mwdb_url, api_key=secret)
 
@@ -109,8 +118,9 @@ if __name__ == "__main__":
 
         if len(cncs) > 0:
             print("Have CnCs. Scanning")
-            init_scan(cncs)
+            run_scan(cncs)
             print("Scan finished")
             cncs = []
-        print("Sleeping for {} seconds".format(SCAN_INTERVAL_SECONDS))
-        time.sleep(SCAN_INTERVAL_SECONDS)
+        # TODO: Only sleep for the required time since we started the last scan.
+        print("Sleeping for {} seconds".format(scan_interval))
+        time.sleep(scan_interval)
