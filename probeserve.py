@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 import re
 import dns.resolver
 
-MWDB_URL = "https://spawnwalk.duckdns.org"
-SCAN_INTERVAL_SECONDS = 10*60
-MASSCAN_PATH = "/home/b/code/masscan/bin/masscan"
+DEFAULT_MWDB_URL = "https://spawnwalk.duckdns.org"
+DEFAULT_SCAN_INTERVAL_SECONDS = 10*60
+masscan_path = None
 
 # TODO: Perform additional processing to capture
 # objects that do not conform to the below structure.
@@ -35,15 +35,15 @@ def get_c2s(config):
 def init_scan(hosts):
     print("Running scan")
 
-    ips = []
-    ports = []
+    ips = set()
+    ports = set()
     for host in hosts:
-        ips.append(host["ip"])
-        ports.append(host["port"])
+        ips.add(host["ip"])
+        ports.add(host["port"])
 
     ips_csv = ",".join(ips)
     ports_csv = ",".join([ str(x) for x in ports])
-    masscan_cmd = [MASSCAN_PATH, "--redis-queue", "127.0.0.1", "-p", ports_csv, ips_csv]
+    masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "-p", ports_csv, ips_csv]
     print("Running command '{}'".format(" ".join(masscan_cmd)))
     subprocess.Popen(masscan_cmd)
     print("Masscan started")
@@ -67,10 +67,15 @@ def resolve(address):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="The probeserver observer.")
-    parser.add_argument("--mwdb-url", help="The URL to the MWDB instance.", default=MWDB_URL + "/api")
+    parser.add_argument("--mwdb-url", help="The URL to the MWDB instance.", default=DEFAULT_MWDB_URL + "/api")
     parser.add_argument("--secret", help="The secret key.", required=True)
+    parser.add_argument("--masscan", help="The path to the masscan binary.", default="masscan")
+    parser.add_argument("--cutoff", help="Cutoff time in hours for time based retrieval.", default=24)
+    parser.add_argument("--scan-interval", help="Scan interval.", default=DEFAULT_SCAN_INTERVAL_SECONDS)
     args = parser.parse_args()
     secret = args.secret
+    masscan_path = args.masscan
+    cutoff_hours = args.cutoff
 
     mwdb = mwdblib.MWDB(api_url=args.mwdb_url, api_key=secret)
 
@@ -82,7 +87,6 @@ if __name__ == "__main__":
 
             # Calculate cutoff time to get configs for the last 24 hours
             utc=pytz.UTC
-            cutoff_hours = 10
             cutoff_time =  utc.localize(datetime.utcnow() - timedelta(hours=cutoff_hours))
 
             recent_configs = mwdb.recent_configs()
