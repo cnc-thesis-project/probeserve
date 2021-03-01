@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import re
 import dns.resolver
 import sys
-
+import tempfile
 
 DEFAULT_MWDB_URL = "https://spawnwalk.duckdns.org"
 DEFAULT_SCAN_INTERVAL_SECONDS = 30*60
@@ -93,12 +93,15 @@ def run_scan(hosts):
 
     port_str = get_port_range(ports)
 
-    ips_csv = ",".join(ips)
-    ports_csv = ",".join([ str(x) for x in ports])
-    masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "--rate", str(masscan_rate), "-p", port_str, ips_csv]
+    ips_list = "\n".join(ips)
+    ips_file = tempfile.NamedTemporaryFile(mode="w+b")
+    ips_file.write(ips_list.encode("utf-8"))
+    ips_file.flush()
+
+    masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "--rate", str(masscan_rate), "-p", port_str, "--include-file", ips_file.name]
     print("Running command '{}'".format(" ".join(masscan_cmd)))
     p = subprocess.Popen(masscan_cmd)
-    return p
+    return p, ips_file
 
 
 def resolve(address):
@@ -166,9 +169,10 @@ if __name__ == "__main__":
 
         if len(cncs) > 0:
             print("Have CnCs. Scanning")
-            p = run_scan(cncs)
+            p, f = run_scan(cncs)
             time.sleep(scan_interval)
             p.wait()
+            f.close()
             print("Scan finished")
             cncs = []
         else:
