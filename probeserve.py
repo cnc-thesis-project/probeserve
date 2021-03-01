@@ -16,7 +16,6 @@ masscan_rate = None
 
 # TODO: Perform additional processing to capture
 # objects that do not conform to the below structure.
-# TODO: Fix the shit code.
 def get_c2s(config):
     cncs = []
     family = config.cfg.get("type")
