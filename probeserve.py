@@ -13,6 +13,7 @@ DEFAULT_MWDB_URL = "https://spawnwalk.duckdns.org"
 DEFAULT_SCAN_INTERVAL_SECONDS = 30*60
 masscan_path = None
 masscan_rate = None
+include_ports = ""
 
 # TODO: Perform additional processing to capture
 # objects that do not conform to the below structure.
@@ -66,6 +67,17 @@ def get_port_range(ports):
 
     return ','.join(port_range)
 
+def get_port_list(port_range):
+    ports = set()
+    for rng in port_range.split(","):
+        port = rng.split("-")
+        if len(port) == 1:
+            ports.add(port[0])
+        else:
+            ports.update(map(str, range(int(port[0]), int(port[1])+1)))
+
+    return ports
+
 def run_scan(hosts):
     print("Running scan")
 
@@ -75,6 +87,9 @@ def run_scan(hosts):
         ips.add(host["ip"])
         if host.get("port"):
             ports.add(host["port"])
+
+    if include_ports != "":
+        ports.update(get_port_list(include_ports))
 
     port_str = get_port_range(ports)
 
@@ -110,12 +125,14 @@ if __name__ == "__main__":
     parser.add_argument("--cutoff", help="Cutoff time in hours for time based retrieval.", default=24, type=int)
     parser.add_argument("--scan-interval", help="Scan interval.", default=DEFAULT_SCAN_INTERVAL_SECONDS)
     parser.add_argument("--masscan-rate", help="Masscan rate.", default=1000, type=int)
+    parser.add_argument("--port", help="Ports to always scan.", default="", type=str)
     args = parser.parse_args()
     secret = args.secret
     masscan_path = args.masscan
     masscan_rate = args.masscan_rate
     cutoff_hours = args.cutoff
     scan_interval = args.scan_interval
+    include_ports = args.port
 
     mwdb = mwdblib.MWDB(api_url=args.mwdb_url, api_key=secret)
 
