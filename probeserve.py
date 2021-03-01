@@ -6,10 +6,13 @@ import pytz
 from datetime import datetime, timedelta
 import re
 import dns.resolver
+import sys
+
 
 DEFAULT_MWDB_URL = "https://spawnwalk.duckdns.org"
 DEFAULT_SCAN_INTERVAL_SECONDS = 30*60
 masscan_path = None
+masscan_rate = None
 
 # TODO: Perform additional processing to capture
 # objects that do not conform to the below structure.
@@ -20,16 +23,13 @@ def get_c2s(config):
         for cnc in config.cfg.get("cncs"):
             if type(cnc["host"]) is str and type(cnc["port"]) is int:
                 for ip in resolve(cnc["host"]):
-                    print("Received C2:", ip + ":" + str(cnc["port"]))
                     cncs.append({"ip": ip, "port": cnc["port"]})
     if config.cfg.get("c2"):
         for cnc in config.cfg.get("c2"):
             if type(cnc) is str:
                 url_regex = "^[a-z]+://.*"
                 if re.match(url_regex, cnc):
-                    print("Ignoring URL: {}".format(cnc))
                     continue
-                print("Received C2:", cnc)
                 cnc_parts = cnc.split(":")
                 for ip in resolve(cnc_parts[0]):
                     cnc = {"ip": ip}
@@ -46,15 +46,16 @@ def run_scan(hosts):
     ports = set()
     for host in hosts:
         ips.add(host["ip"])
-        if host.get("port"):
-            ports.add(host["port"])
+        #if host.get("port"):
+            #ports.add(host["port"])
+    # TODO: convert ports to ranges where possible
 
     ips_csv = ",".join(ips)
     ports_csv = ",".join([ str(x) for x in ports])
-    masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "-p", ports_csv, ips_csv]
+    masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "--rate", str(masscan_rate), "-p", "1-65535", ips_csv]
     print("Running command '{}'".format(" ".join(masscan_cmd)))
     p = subprocess.Popen(masscan_cmd)
-    p.wait()
+    return p
 
 
 def resolve(address):
@@ -80,9 +81,11 @@ if __name__ == "__main__":
     parser.add_argument("--masscan", help="The path to the masscan binary.", default="masscan")
     parser.add_argument("--cutoff", help="Cutoff time in hours for time based retrieval.", default=24, type=int)
     parser.add_argument("--scan-interval", help="Scan interval.", default=DEFAULT_SCAN_INTERVAL_SECONDS)
+    parser.add_argument("--masscan-rate", help="Masscan rate.", default=1000, type=int)
     args = parser.parse_args()
     secret = args.secret
     masscan_path = args.masscan
+    masscan_rate = args.masscan_rate
     cutoff_hours = args.cutoff
     scan_interval = args.scan_interval
 
@@ -92,16 +95,15 @@ if __name__ == "__main__":
     cncs = []
     while True:
         if not last_id:
-            print("No last_config_id loaded, get configurations based on date.")
+            print("First scan. Getting C2s from the last {} hours.".format(cutoff_hours))
 
-            # Calculate cutoff time to get configs for the last 24 hours
             utc=pytz.UTC
             cutoff_time =  utc.localize(datetime.utcnow() - timedelta(hours=cutoff_hours))
 
             recent_configs = mwdb.recent_configs()
             for idx, config in enumerate(recent_configs):
                 if config.upload_time < cutoff_time:
-                    print("Cutoff time {} reached".format(config.upload_time))
+                    print("Cutoff {} hours {} reached".format(cutoff_hours, config.upload_time))
                     break
 
                 # The first one we receive will be the latest one, store that id
@@ -109,8 +111,10 @@ if __name__ == "__main__":
                     last_id = config.id
 
                 cncs.extend(get_c2s(config))
+                print(".", end="")
+                sys.stdout.flush()
 
-        print("Listening for configs")
+        print("\nListening for configs")
         configs = mwdb.listen_for_configs(last_id, blocking=False)
         start_time = time.localtime()
         for config in configs:
@@ -118,9 +122,12 @@ if __name__ == "__main__":
 
         if len(cncs) > 0:
             print("Have CnCs. Scanning")
-            run_scan(cncs)
+            p = run_scan(cncs)
+            time.sleep(scan_interval)
+            p.wait()
             print("Scan finished")
             cncs = []
+        else:
+            time.sleep(scan_interval)
         # TODO: Only sleep for the required time since we started the last scan.
         print("Sleeping for {} seconds".format(scan_interval))
-        time.sleep(scan_interval)
