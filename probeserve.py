@@ -40,6 +40,31 @@ def get_c2s(config):
             cncs.append(cnc)
     return cncs
 
+def get_port_range(ports):
+    port_range = []
+    port_start = -1
+    for port in sorted(map(int, ports)):
+        if port_start == -1:
+            # the first port in the list
+            port_start = port
+        elif port != last_port + 1:
+            # when the current port is not continuous
+            if last_port == port_start:
+                # he/she is alone ;-;
+                port_range.append(str(port_start))
+            else:
+                # port range
+                port_range.append("{}-{}".format(port_start, last_port))
+            port_start = port
+
+        last_port = port
+
+    if last_port == port_start:
+        port_range.append(str(port_start))
+    else:
+        port_range.append("{}-{}".format(port_start, last_port))
+
+    return ','.join(port_range)
 
 def run_scan(hosts):
     print("Running scan")
@@ -48,13 +73,14 @@ def run_scan(hosts):
     ports = set()
     for host in hosts:
         ips.add(host["ip"])
-        #if host.get("port"):
-            #ports.add(host["port"])
-    # TODO: convert ports to ranges where possible
+        if host.get("port"):
+            ports.add(host["port"])
+
+    port_str = get_port_range(ports)
 
     ips_csv = ",".join(ips)
     ports_csv = ",".join([ str(x) for x in ports])
-    masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "--rate", str(masscan_rate), "-p", "1-65535", ips_csv]
+    masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "--rate", str(masscan_rate), "-p", port_str, ips_csv]
     print("Running command '{}'".format(" ".join(masscan_cmd)))
     p = subprocess.Popen(masscan_cmd)
     return p
