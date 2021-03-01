@@ -16,26 +16,28 @@ masscan_rate = None
 
 # TODO: Perform additional processing to capture
 # objects that do not conform to the below structure.
-# TODO: Fix the shit code.
 def get_c2s(config):
     cncs = []
-    if config.cfg.get("cncs"):
-        for cnc in config.cfg.get("cncs"):
-            if type(cnc["host"]) is str and type(cnc["port"]) is int:
-                for ip in resolve(cnc["host"]):
-                    cncs.append({"ip": ip, "port": cnc["port"]})
-    if config.cfg.get("c2"):
-        for cnc in config.cfg.get("c2"):
-            if type(cnc) is str:
-                url_regex = "^[a-z]+://.*"
-                if re.match(url_regex, cnc):
-                    continue
-                cnc_parts = cnc.split(":")
-                for ip in resolve(cnc_parts[0]):
-                    cnc = {"ip": ip}
-                    if len(cnc_parts) > 1:
-                        cnc["port"] = cnc_parts[1]
-                    cncs.append(cnc)
+    family = config.cfg.get("type")
+    for cnc in config.cfg.get("cncs", []):
+        if type(cnc["host"]) is str and type(cnc["port"]) is int:
+            for ip in resolve(cnc["host"]):
+                cncs.append({"family": family, "ip": ip, "port": cnc["port"]})
+    for cnc in config.cfg.get("c2", []):
+        if type(cnc) is str:
+            url_regex = "^[a-z]+://.*"
+            if re.match(url_regex, cnc):
+                continue
+        elif type(cnc) is dict:
+            cnc = cnc["host"]
+        else:
+            continue
+        cnc_parts = cnc.split(":")
+        for ip in resolve(cnc_parts[0]):
+            cnc = {"family": family, "ip": ip}
+            if len(cnc_parts) > 1:
+                cnc["port"] = cnc_parts[1]
+            cncs.append(cnc)
     return cncs
 
 
@@ -105,7 +107,6 @@ if __name__ == "__main__":
                 if config.upload_time < cutoff_time:
                     print("Cutoff {} hours {} reached".format(cutoff_hours, config.upload_time))
                     break
-
                 # The first one we receive will be the latest one, store that id
                 if idx == 0:
                     last_id = config.id
