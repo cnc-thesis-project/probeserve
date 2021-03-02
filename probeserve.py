@@ -7,12 +7,13 @@ from datetime import datetime, timedelta
 import re
 import dns.resolver
 import sys
-
+import tempfile
 
 DEFAULT_MWDB_URL = "https://spawnwalk.duckdns.org"
 DEFAULT_SCAN_INTERVAL_SECONDS = 30*60
 masscan_path = None
 masscan_rate = None
+include_ports = ""
 
 # TODO: Perform additional processing to capture
 # objects that do not conform to the below structure.
@@ -41,6 +42,42 @@ def get_c2s(config):
             cncs.append(cnc)
     return cncs
 
+def get_port_range(ports):
+    port_range = []
+    port_start = -1
+    for port in sorted(map(int, ports)):
+        if port_start == -1:
+            # the first port in the list
+            port_start = port
+        elif port != last_port + 1:
+            # when the current port is not continuous
+            if last_port == port_start:
+                # he/she is alone ;-;
+                port_range.append(str(port_start))
+            else:
+                # port range
+                port_range.append("{}-{}".format(port_start, last_port))
+            port_start = port
+
+        last_port = port
+
+    if last_port == port_start:
+        port_range.append(str(port_start))
+    else:
+        port_range.append("{}-{}".format(port_start, last_port))
+
+    return ','.join(port_range)
+
+def get_port_list(port_range):
+    ports = set()
+    for rng in port_range.split(","):
+        port = rng.split("-")
+        if len(port) == 1:
+            ports.add(port[0])
+        else:
+            ports.update(map(str, range(int(port[0]), int(port[1])+1)))
+
+    return ports
 
 def run_scan(hosts):
     print("Running scan")
@@ -49,16 +86,23 @@ def run_scan(hosts):
     ports = set()
     for host in hosts:
         ips.add(host["ip"])
-        #if host.get("port"):
-            #ports.add(host["port"])
-    # TODO: convert ports to ranges where possible
+        if host.get("port"):
+            ports.add(host["port"])
 
-    ips_csv = ",".join(ips)
-    ports_csv = ",".join([ str(x) for x in ports])
-    masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "--rate", str(masscan_rate), "-p", "1-65535", ips_csv]
+    if include_ports != "":
+        ports.update(get_port_list(include_ports))
+
+    port_str = get_port_range(ports)
+
+    ips_list = "\n".join(ips)
+    ips_file = tempfile.NamedTemporaryFile(mode="w+b")
+    ips_file.write(ips_list.encode("utf-8"))
+    ips_file.flush()
+
+    masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "--rate", str(masscan_rate), "-p", port_str, "--include-file", ips_file.name]
     print("Running command '{}'".format(" ".join(masscan_cmd)))
     p = subprocess.Popen(masscan_cmd)
-    return p
+    return p, ips_file
 
 
 def resolve(address):
@@ -90,6 +134,7 @@ if __name__ == "__main__":
     parser.add_argument("--cutoff", help="Cutoff time in hours for time based retrieval.", default=24, type=int)
     parser.add_argument("--scan-interval", help="Scan interval.", default=DEFAULT_SCAN_INTERVAL_SECONDS)
     parser.add_argument("--masscan-rate", help="Masscan rate.", default=1000, type=int)
+    parser.add_argument("--port", help="Ports to always scan.", default="", type=str)
     parser.add_argument("--out", help="The path to store C&C metadata.", default="cnc.csv", type=str)
     args = parser.parse_args()
     secret = args.secret
@@ -97,6 +142,7 @@ if __name__ == "__main__":
     masscan_rate = args.masscan_rate
     cutoff_hours = args.cutoff
     scan_interval = args.scan_interval
+    include_ports = args.port
     out_path = args.out
 
     mwdb = mwdblib.MWDB(api_url=args.mwdb_url, api_key=secret)
@@ -132,9 +178,10 @@ if __name__ == "__main__":
         if len(cncs) > 0:
             print("Have CnCs. Scanning")
             write_cnc_metadata(cncs, out_path)
-            p = run_scan(cncs)
+            p, f = run_scan(cncs)
             time.sleep(scan_interval)
             p.wait()
+            f.close()
             print("Scan finished")
             cncs = []
         else:
