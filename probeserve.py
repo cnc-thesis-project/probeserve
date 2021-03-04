@@ -80,8 +80,6 @@ def get_port_list(port_range):
     return ports
 
 def run_scan(hosts):
-    print("Running scan")
-
     ips = set()
     ports = set()
     for host in hosts:
@@ -151,7 +149,7 @@ if __name__ == "__main__":
     cncs = []
     while True:
         if not last_id:
-            print("First scan. Getting C2s from the last {} hours.".format(cutoff_hours))
+            print("First scan. Getting configurations from the last {} hours.".format(cutoff_hours))
 
             utc=pytz.UTC
             cutoff_time =  utc.localize(datetime.utcnow() - timedelta(hours=cutoff_hours))
@@ -159,32 +157,33 @@ if __name__ == "__main__":
             recent_configs = mwdb.recent_configs()
             for idx, config in enumerate(recent_configs):
                 if config.upload_time < cutoff_time:
-                    print("Cutoff {} hours {} reached".format(cutoff_hours, config.upload_time))
+                    print("\nCutoff {} hours {} reached.".format(cutoff_hours, config.upload_time))
                     break
                 # The first one we receive will be the latest one, store that id
                 if idx == 0:
                     last_id = config.id
 
-                cncs.extend(get_c2s(config))
-                print(".", end="")
+                cfgc2s = get_c2s(config)
+                if cfgc2s:
+                    print("+", end="")
+                    cncs.extend(cfgc2s)
+                else:
+                    print(".", end="")
                 sys.stdout.flush()
-
-        print("\nListening for configs")
-        configs = mwdb.listen_for_configs(last_id, blocking=False)
-        start_time = time.localtime()
-        for config in configs:
-            cncs.extend(get_c2s(config))
+        else:
+            print("\nListening for configs...")
+            configs = mwdb.listen_for_configs(last_id, blocking=False)
+            for config in configs:
+                cncs.extend(get_c2s(config))
 
         if len(cncs) > 0:
-            print("Have CnCs. Scanning")
+            print("Have C2s. Sending scan command.")
             write_cnc_metadata(cncs, out_path)
             p, f = run_scan(cncs)
+            print("Scan command sent. Waiting for scan interval to end...")
             time.sleep(scan_interval)
             p.wait()
             f.close()
-            print("Scan finished")
             cncs = []
         else:
             time.sleep(scan_interval)
-        # TODO: Only sleep for the required time since we started the last scan.
-        print("Sleeping for {} seconds".format(scan_interval))
