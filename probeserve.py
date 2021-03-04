@@ -73,9 +73,9 @@ def get_port_list(port_range):
     for rng in port_range.split(","):
         port = rng.split("-")
         if len(port) == 1:
-            ports.add(port[0])
+            ports.add(int(port[0]))
         else:
-            ports.update(map(str, range(int(port[0]), int(port[1])+1)))
+            ports.update(range(int(port[0]), int(port[1])+1))
 
     return ports
 
@@ -87,7 +87,7 @@ def run_scan(hosts):
     for host in hosts:
         ips.add(host["ip"])
         if host.get("port"):
-            ports.add(host["port"])
+            ports.add(int(host["port"]))
 
     if include_ports != "":
         ports.update(get_port_list(include_ports))
