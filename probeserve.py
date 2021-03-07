@@ -4,6 +4,7 @@ import mwdblib
 import time
 import pytz
 from datetime import datetime, timedelta
+import os
 import re
 import dns.resolver
 import sys
@@ -11,6 +12,7 @@ import tempfile
 
 DEFAULT_MWDB_URL = "https://spawnwalk.duckdns.org"
 DEFAULT_SCAN_INTERVAL_SECONDS = 30*60
+masscan_round = 0
 masscan_path = None
 masscan_rate = None
 masscan_pcap = None
@@ -81,6 +83,8 @@ def get_port_list(port_range):
     return ports
 
 def run_scan(hosts):
+    global masscan_round
+
     ips = set()
     ports = set()
     for host in hosts:
@@ -98,16 +102,24 @@ def run_scan(hosts):
     ips_file.write(ips_list.encode("utf-8"))
     ips_file.flush()
 
+    pcap_path, pcap_ext = os.path.splitext(masscan_pcap)
+    pcap_path = "{}-{}{}".format(pcap_path, masscan_round, pcap_ext)
+
     masscan_cmd = [masscan_path,
                    "--redis-queue", "127.0.0.1",
                    "--rate", str(masscan_rate),
                    "-p", port_str,
                    "--include-file", ips_file.name,
-                   "--pcap", masscan_pcap,
+                   "--pcap", pcap_path,
                    ]
     print("Running command '{}'".format(" ".join(masscan_cmd)))
     p = subprocess.Popen(masscan_cmd)
 
+<<<<<<< HEAD
+=======
+    masscan_round += 1
+
+>>>>>>> Add round suffix for pcap name
     return p, ips_file
 
 
