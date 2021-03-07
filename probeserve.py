@@ -13,6 +13,7 @@ DEFAULT_MWDB_URL = "https://spawnwalk.duckdns.org"
 DEFAULT_SCAN_INTERVAL_SECONDS = 30*60
 masscan_path = None
 masscan_rate = None
+masscan_pcap = None
 include_ports = ""
 
 # TODO: Perform additional processing to capture
@@ -97,9 +98,16 @@ def run_scan(hosts):
     ips_file.write(ips_list.encode("utf-8"))
     ips_file.flush()
 
-    masscan_cmd = [masscan_path, "--redis-queue", "127.0.0.1", "--rate", str(masscan_rate), "-p", port_str, "--include-file", ips_file.name]
+    masscan_cmd = [masscan_path,
+                   "--redis-queue", "127.0.0.1",
+                   "--rate", str(masscan_rate),
+                   "-p", port_str,
+                   "--include-file", ips_file.name,
+                   "--pcap", masscan_pcap,
+                   ]
     print("Running command '{}'".format(" ".join(masscan_cmd)))
     p = subprocess.Popen(masscan_cmd)
+
     return p, ips_file
 
 
@@ -135,10 +143,12 @@ if __name__ == "__main__":
     parser.add_argument("--port", help="Ports to always scan.", default="", type=str)
     parser.add_argument("--out", help="The path to store C&C metadata.", default="cnc.csv", type=str)
     parser.add_argument("--checkpoint", help="The path to checkpoint file, resume from the last retrieval.", type=str)
+    parser.add_argument("--masscan-pcap", help="The path to store masscan pcap file.", default="cnc.pcap", type=str)
     args = parser.parse_args()
     secret = args.secret
     masscan_path = args.masscan
     masscan_rate = args.masscan_rate
+    masscan_pcap = args.masscan_pcap
     cutoff_hours = args.cutoff
     scan_interval = args.scan_interval
     include_ports = args.port
@@ -185,14 +195,13 @@ if __name__ == "__main__":
             configs = mwdb.listen_for_configs(last_id, blocking=False)
             for idx, config in enumerate(configs):
                 if idx == 0:
-                    last_id = configs[0].id
-                print(config)
+                    last_id = config.id
                 cncs.extend(get_c2s(config))
 
         if len(cncs) > 0:
             print("Have C2s. Sending scan command.")
             write_cnc_metadata(cncs, out_path)
-            p, f = run_scan(cncs)
+            p, tmp = run_scan(cncs)
             print("Scan command sent. Waiting for scan interval to end...")
             if args.checkpoint and last_id:
                 print("Writing checkpoint: {}".format(last_id))
@@ -201,7 +210,7 @@ if __name__ == "__main__":
 
             time.sleep(scan_interval)
             p.wait()
-            f.close()
+            tmp.close()
             cncs = []
         else:
             if args.checkpoint and last_id:
