@@ -183,7 +183,7 @@ if __name__ == "__main__":
         else:
             print("\nListening for configs...")
             configs = mwdb.listen_for_configs(last_id, blocking=False)
-            for idx, config in configs:
+            for idx, config in enumerate(configs):
                 if idx == 0:
                     last_id = configs[0].id
                 print(config)
