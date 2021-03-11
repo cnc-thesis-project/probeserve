@@ -134,6 +134,7 @@ if __name__ == "__main__":
     parser.add_argument("--masscan-rate", help="Masscan rate.", default=1000, type=int)
     parser.add_argument("--port", help="Ports to always scan.", default="", type=str)
     parser.add_argument("--out", help="The path to store C&C metadata.", default="cnc.csv", type=str)
+    parser.add_argument("--checkpoint", help="The path to checkpoint file, resume from the last retrieval.", type=str)
     args = parser.parse_args()
     secret = args.secret
     masscan_path = args.masscan
@@ -146,6 +147,15 @@ if __name__ == "__main__":
     mwdb = mwdblib.MWDB(api_url=args.mwdb_url, api_key=secret)
 
     last_id = None
+    if args.checkpoint:
+        try:
+            with open(args.checkpoint, "r") as f:
+                last_id = f.read().strip()
+            print("Found checkpoint, resuming from {}".format(last_id))
+        except IOError:
+            print("Checkpoint file not found")
+            pass
+
     cncs = []
     while True:
         if not last_id:
@@ -173,7 +183,10 @@ if __name__ == "__main__":
         else:
             print("\nListening for configs...")
             configs = mwdb.listen_for_configs(last_id, blocking=False)
-            for config in configs:
+            for idx, config in enumerate(configs):
+                if idx == 0:
+                    last_id = configs[0].id
+                print(config)
                 cncs.extend(get_c2s(config))
 
         if len(cncs) > 0:
@@ -181,9 +194,20 @@ if __name__ == "__main__":
             write_cnc_metadata(cncs, out_path)
             p, f = run_scan(cncs)
             print("Scan command sent. Waiting for scan interval to end...")
+            if args.checkpoint and last_id:
+                print("Writing checkpoint: {}".format(last_id))
+                with open(args.checkpoint, "w") as f:
+                    f.write("{}\n".format(last_id))
+
             time.sleep(scan_interval)
             p.wait()
             f.close()
             cncs = []
         else:
+            if args.checkpoint and last_id:
+                print("Writing checkpoint: {}".format(last_id))
+                with open(args.checkpoint, "w") as f:
+                    f.write("{}\n".format(last_id))
+
             time.sleep(scan_interval)
+
