@@ -189,20 +189,25 @@ if __name__ == "__main__":
                 print(config)
                 cncs.extend(get_c2s(config))
 
-        if args.checkpoint and last_id:
-            print("Writing checkpoint: {}".format(last_id))
-            with open(args.checkpoint, "w") as f:
-                f.write("{}\n".format(last_id))
-
         if len(cncs) > 0:
             print("Have C2s. Sending scan command.")
             write_cnc_metadata(cncs, out_path)
             p, f = run_scan(cncs)
             print("Scan command sent. Waiting for scan interval to end...")
+            if args.checkpoint and last_id:
+                print("Writing checkpoint: {}".format(last_id))
+                with open(args.checkpoint, "w") as f:
+                    f.write("{}\n".format(last_id))
+
             time.sleep(scan_interval)
             p.wait()
             f.close()
             cncs = []
         else:
+            if args.checkpoint and last_id:
+                print("Writing checkpoint: {}".format(last_id))
+                with open(args.checkpoint, "w") as f:
+                    f.write("{}\n".format(last_id))
+
             time.sleep(scan_interval)
 
